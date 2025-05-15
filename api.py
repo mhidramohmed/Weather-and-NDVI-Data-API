@@ -1,49 +1,47 @@
 import ee
 from flask import Flask, request, jsonify
 import requests
+from datetime import datetime
+
 
 ee.Authenticate()
 ee.Initialize(project="ndviproject-459415")
 app = Flask(__name__)
 
-@app.route('/get_data', methods=['GET'])
-def get_data():
-    response = {
-        "status": "success",
-        "data": {}
-    }
+
+def validate_request(request):
+    """
+    Validate the request parameters for coordinates and date.
+    :param request: Flask request object
+    :return: List of errors (if any)
+    """
+    errors = []
+
     try:
 
-        errors = validate_request(request)
-        if errors:
-            return jsonify({"errors": errors}), 400
-        
-        # Get the parameters from the query string
-        json_ = request.get_json()
-        coordinates = json_['coordinates']
-        date = json_['date']
-        
-        # Call the function to get weather data
-        weather_data = get_open_meteo_weather(coordinates[0][0], coordinates[0][1], date)
-        if weather_data["errors"]:
-            return jsonify({"errors": weather_data["errors"]}), 400
-        
-        response["data"].update(weather_data["data"])
+        coordinates = request.json.get("coordinates")
+        date = request.json.get("date")
 
-        print(weather_data)
-        # Call the function to get NDVI data
-        ndvi_data = get_ndvi_data(coordinates, date)
-        if ndvi_data["errors"]:
-            return jsonify({"errors": ndvi_data["errors"]}), 400
-        print(ndvi_data)
-        response["data"].update(ndvi_data["data"])
-        print(response)
-        # Return the weather data as a JSON response
-        return jsonify(response), 200
-    
+        if not isinstance(coordinates, list) or len(coordinates) < 4:
+            errors.append("Coordinates must be a list with at least 4 points.")
+
+        else:
+            for i, point in enumerate(coordinates):
+                if not (isinstance(point, list) and len(point) == 2):
+                    errors.append(f"Point {i+1} is not a list of two elements.")
+                    continue
+                lon, lat = point
+                if not (isinstance(lon, float) and isinstance(lat, float)):
+                    errors.append(f"Point {i+1} must contain two floats (lon, lat).")
+
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except (ValueError, TypeError):
+            errors.append("Date must be a valid string in 'YYYY-MM-DD' format.")
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+            errors.append(f"validate_request: {str(e)}")
 
+    return errors
 
 
 
@@ -107,6 +105,7 @@ def get_open_meteo_weather(lat, lon, date):
     return response_
 
 
+
 def get_ndvi_data(coordinates, date):
     """
     Get mean NDVI value from Google Earth Engine for a given polygon and date.
@@ -157,37 +156,58 @@ def get_ndvi_data(coordinates, date):
     return response
 
 
-def validate_request(request):
-    """
-    Validate the request parameters for coordinates and date.
-    :param request: Flask request object
-    :return: List of errors (if any)
-    """
-    errors = []
 
+@app.route('/get_data', methods=['GET'])
+def get_data():
+    response = {
+        "status": "success",
+        "data": {}
+    }
     try:
 
-        coordinates = request.json.get("coordinates")
-        date = request.json.get("date")
+        errors = validate_request(request)
+        if errors:
+            return jsonify({"errors": errors}), 400
+        
+        # Get the parameters from the query string
+        json_ = request.get_json()
+        coordinates = json_['coordinates']
+        date = json_['date']
+        
+        # Call the function to get weather data
+        weather_data = get_open_meteo_weather(coordinates[0][0], coordinates[0][1], date)
+        if weather_data["errors"]:
+            return jsonify({"errors": weather_data["errors"]}), 400
+        
+        response["data"].update(weather_data["data"])
 
-        if not isinstance(coordinates, list) or len(coordinates) < 4:
-            errors.append("Coordinates must be a list with at least 4 points.")
+        # --------------------------------------------------------------------------------------
 
-        else:
-            for i, point in enumerate(coordinates):
-                if not (isinstance(point, list) and len(point) == 2):
-                    errors.append(f"Point {i+1} is not a list of two elements.")
-                    continue
-                lon, lat = point
-                if not (isinstance(lon, float) and isinstance(lat, float)):
-                    errors.append(f"Point {i+1} must contain two floats (lon, lat).")
 
-        if not isinstance(date, str):
-            errors.append("Date must be a string in 'YYYY-MM-DD' format.")
+        # print(weather_data)
+        # Call the function to get NDVI data
+        ndvi_data = get_ndvi_data(coordinates, date)
+        if ndvi_data["errors"]:
+            return jsonify({"errors": ndvi_data["errors"]}), 400
+        print(ndvi_data)
+        response["data"].update(ndvi_data["data"])
+        print(response)
+        # Return the weather data as a JSON response
+        return jsonify(response), 200
+    
     except Exception as e:
-            errors.append(f"validate_request: {str(e)}")
+        return jsonify({"error": str(e)}), 400
 
-    return errors
+
+
+
+
+
+
+
+
+
+
 
 
 
